@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HeightsKnights</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            overflow: hidden;
+            touch-action: none;
+        }
+        canvas {
+            background-color: #2c2c2c;
+            display: block;
+            border: 4px solid #4a4a4a;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        .ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            text-align: center;
+        }
+        .menu-card {
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 2rem 3rem;
+            border-radius: 12px;
+            border: 2px solid #4a4a4a;
+            box-shadow: 0 0 30px rgba(74, 222, 128, 0.3);
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+        .btn-primary {
+            background-color: #4ade80;
+            color: #1a1a1a;
+            font-weight: bold;
+        }
+        .btn-primary:hover {
+            background-color: #36b36a;
+            box-shadow: 0 0 15px rgba(74, 222, 128, 0.5);
+        }
+        .btn-difficulty {
+            background-color: #374151;
+            color: #d1d5db;
+        }
+        .btn-difficulty.selected {
+            background-color: #4ade80;
+            color: #1a1a1a;
+            border-color: #a3e635;
+        }
+        #scoreboard {
+            display: flex;
+            gap: 1.5rem;
+            background-color: rgba(0,0,0,0.5);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center h-screen p-4">
+
+    <div id="scoreboard" class="hidden"></div>
+
+    <div id="game-container" class="relative">
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- UI Overlays -->
+        <div id="start-menu" class="ui-overlay">
+            <div class="menu-card space-y-6">
+                <h1 class="text-4xl text-green-400">HeightsKnights</h1>
+                <p class="text-lg text-gray-300">Dungeon Edition</p>
+                <div class="space-y-4">
+                    <p class="text-sm">WASD/Arrows: Move | Mouse: Aim | Click: Attack</p>
+                    <div>
+                        <p class="mb-2">Select Difficulty:</p>
+                        <div class="flex justify-center gap-4">
+                            <button id="btn-easy" class="btn btn-difficulty">Easy</button>
+                            <button id="btn-normal" class="btn btn-difficulty selected">Normal</button>
+                            <button id="btn-hard" class="btn btn-difficulty">Hard</button>
+                        </div>
+                    </div>
+                </div>
+                <button id="start-button" class="btn btn-primary text-xl">Start Game</button>
+            </div>
+        </div>
+        
+        <div id="message-overlay" class="ui-overlay hidden pointer-events-none">
+             <div class="menu-card">
+                <h2 id="message-text" class="text-5xl"></h2>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    window.onload = function() {
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // UI Elements
+        const startMenu = document.getElementById('start-menu');
+        const startButton = document.getElementById('start-button');
+        const scoreboardDiv = document.getElementById('scoreboard');
+        const messageOverlay = document.getElementById('message-overlay');
+        const messageText = document.getElementById('message-text');
+        const difficultyButtons = {
+            easy: document.getElementById('btn-easy'),
+            normal: document.getElementById('btn-normal'),
+            hard: document.getElementById('btn-hard'),
+        };
+
+        // --- Game Constants & Config ---
+        const KNIGHT_RADIUS = 20;
+        const KNIGHT_SPEED = 3;
+        const SCORE_TO_WIN = 5;
+        const TOTAL_KNIGHTS = 8;
+        const PLAYER_INDEX = 0;
+        const WALL_SIZE = 50;
+        const WALL_HEALTH = 3;
+
+        const WEAPONS = {
+            sword: { type: 'sword', cooldown: 300, range: 45, arc: Math.PI / 2, duration: 150, color: '#d1d5db' },
+            bow: { type: 'bow', cooldown: 500, projectile: 'arrow', color: '#facc15' },
+            shotgun: { type: 'shotgun', cooldown: 800, projectile: 'pellet', count: 5, spread: 0.5, color: '#f97316' },
+            laser: { type: 'laser', cooldown: 200, projectile: 'laser_beam', color: '#ef4444' },
+            minigun: { type: 'minigun', cooldown: 80, projectile: 'bullet', color: '#60a5fa' }
+        };
+        const POWERUP_RADIUS = 15;
+        const POWERUP_SPAWN_DELAY = 5000;
+        const POWERUP_TYPES = ['bow', 'shotgun', 'laser', 'minigun'];
+        
+        const COLORS = ['#4ade80', '#f87171', '#60aeff', '#fbbf24', '#a78bfa', '#f472b6', '#34d399', '#9ca3af'];
+
+        const MAP_LAYOUT = [
+            "S              S",
+            " P            P ",
+            "  111      111  ",
+            "  1        1    ",
+            "S 1        1  S ",
+            "                ",
+            "      1111      ",
+            "      1111      ",
+            "                ",
+            "S 1        1  S ",
+            "  1        1    ",
+            "  111      111  ",
+            " P            P ",
+            "S              S",
+        ];
+
+        let gameState = 'MENU';
+        let difficulty = 'normal';
+        let knights = [];
+        let projectiles = [];
+        let powerups = [];
+        let swordSlashes = [];
+        let walls = [];
+        let spawnPoints = [];
+        let powerupLocations = [];
+
+        let lastPowerupTime = 0;
+        let messageTimer = 0;
+        
+        const mouse = { x: 0, y: 0, down: false };
+        const keys = {};
+        
+        // --- Setup & Initialization ---
+        function resizeCanvas() {
+            const container = document.querySelector('body');
+            const availableHeight = container.clientHeight - (scoreboardDiv.offsetHeight + 30); // 30 for margin/padding
+            const availableWidth = container.clientWidth;
+
+            const mapPixelWidth = MAP_LAYOUT[0].length * WALL_SIZE;
+            const mapPixelHeight = MAP_LAYOUT.length * WALL_SIZE;
+
+            const scale = Math.min(availableWidth / mapPixelWidth, availableHeight / mapPixelHeight);
+
+            canvas.width = mapPixelWidth;
+            canvas.height = mapPixelHeight;
+            
+            canvas.style.width = (canvas.width * scale) + 'px';
+            canvas.style.height = (canvas.height * scale) + 'px';
+        }
+
+        function init() {
+            knights = [];
+            for (let i = 0; i < TOTAL_KNIGHTS; i++) {
+                knights.push({
+                    isPlayer: i === PLAYER_INDEX,
+                    x: 0, y: 0,
+                    vx: 0, vy: 0,
+                    radius: KNIGHT_RADIUS,
+                    color: COLORS[i],
+                    angle: 0,
+                    isAlive: true,
+                    score: 0,
+                    weapon: { ...WEAPONS.sword },
+                    lastAttackTime: 0,
+                    ai: {
+                        state: 'seeking_weapon',
+                        target: null,
+                        moveAngle: Math.random() * Math.PI * 2,
+                        changeTargetTimer: 0
+                    }
+                });
+            }
+            updateScoreboard();
+            resetRound();
+        }
+
+        function resetRound() {
+            projectiles = [];
+            powerups = [];
+            swordSlashes = [];
+            lastPowerupTime = Date.now();
+            
+            walls = [];
+            spawnPoints = [];
+            powerupLocations = [];
+
+            for(let row = 0; row < MAP_LAYOUT.length; row++) {
+                for (let col = 0; col < MAP_LAYOUT[row].length; col++) {
+                    const char = MAP_LAYOUT[row][col];
+                    const x = col * WALL_SIZE + WALL_SIZE / 2;
+                    const y = row * WALL_SIZE + WALL_SIZE / 2;
+
+                    if (char === '1') {
+                        walls.push({
+                            x: col * WALL_SIZE,
+                            y: row * WALL_SIZE,
+                            width: WALL_SIZE,
+                            height: WALL_SIZE,
+                            hp: WALL_HEALTH,
+                            id: `wall-${row}-${col}`
+                        });
+                    } else if (char === 'S') {
+                        spawnPoints.push({ x, y });
+                    } else if (char === 'P') {
+                        powerupLocations.push({ x, y });
+                    }
+                }
+            }
+            
+            const shuffledSpawns = [...spawnPoints].sort(() => 0.5 - Math.random());
+
+            knights.forEach((knight, index) => {
+                knight.isAlive = true;
+                knight.weapon = { ...WEAPONS.sword };
+                
+                if (shuffledSpawns[index]) {
+                    knight.x = shuffledSpawns[index].x;
+                    knight.y = shuffledSpawns[index].y;
+                } else { 
+                    knight.x = Math.random() * canvas.width;
+                    knight.y = Math.random() * canvas.height;
+                }
+            });
+        }
+        
+        function updateScoreboard() {
+            scoreboardDiv.innerHTML = '';
+            knights.forEach((k, i) => {
+                const scoreEl = document.createElement('div');
+                scoreEl.style.color = k.color;
+                scoreEl.textContent = `P${i+1}: ${k.score}`;
+                if (i === PLAYER_INDEX) {
+                    scoreEl.textContent = `YOU: ${k.score}`;
+                    scoreEl.style.textDecoration = 'underline';
+                }
+                scoreboardDiv.appendChild(scoreEl);
+            });
+        }
+
+        function showMessage(text, duration = 2000) {
+            messageText.textContent = text;
+            messageOverlay.classList.remove('hidden');
+            messageTimer = duration;
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener('resize', resizeCanvas);
+        
+        document.addEventListener('keydown', e => { keys[e.code] = true; });
+        document.addEventListener('keyup', e => { keys[e.code] = false; });
+        
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            const scale = canvas.width / rect.width;
+            mouse.x = (e.clientX - rect.left) * scale;
+            mouse.y = (e.clientY - rect.top) * scale;
+        });
+        canvas.addEventListener('mousedown', () => { mouse.down = true; });
+        canvas.addEventListener('mouseup', () => { mouse.down = false; });
+
+        Object.entries(difficultyButtons).forEach(([key, button]) => {
+            button.addEventListener('click', () => {
+                Object.values(difficultyButtons).forEach(b => b.classList.remove('selected'));
+                button.classList.add('selected');
+                difficulty = key;
+            });
+        });
+
+        startButton.addEventListener('click', () => {
+            startMenu.classList.add('hidden');
+            scoreboardDiv.classList.remove('hidden');
+            resizeCanvas(); // Recalculate size with scoreboard visible
+            gameState = 'COUNTDOWN';
+            init();
+            gameLoop();
+        });
+
+
+        // --- Update Functions ---
+        
+        function updatePlayer(p) {
+            if (!p.isAlive) return;
+
+            // Movement
+            p.vx = 0;
+            p.vy = 0;
+            if (keys['KeyW'] || keys['ArrowUp']) p.vy = -KNIGHT_SPEED;
+            if (keys['KeyS'] || keys['ArrowDown']) p.vy = KNIGHT_SPEED;
+            if (keys['KeyA'] || keys['ArrowLeft']) p.vx = -KNIGHT_SPEED;
+            if (keys['KeyD'] || keys['ArrowRight']) p.vx = KNIGHT_SPEED;
+
+            // Aiming
+            p.angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
+
+            // Attacking
+            const now = Date.now();
+            if (mouse.down && now > p.lastAttackTime + p.weapon.cooldown) {
+                attack(p);
+                p.lastAttackTime = now;
+            }
+        }
+
+        function updateAI(aiKnight) {
+            if (!aiKnight.isAlive) return;
+
+            const now = Date.now();
+            const difficultySettings = {
+                easy: { reaction: 700, accuracy: 1.5, wanderChance: 0.3, hesitationChance: 0.4 },
+                normal: { reaction: 250, accuracy: 0.1, wanderChance: 0, hesitationChance: 0 },
+                hard: { reaction: 100, accuracy: 0.05, wanderChance: 0, hesitationChance: 0 },
+            };
+            const settings = difficultySettings[difficulty];
+
+            aiKnight.ai.changeTargetTimer -= 16; 
+
+            if (aiKnight.ai.changeTargetTimer <= 0) {
+                 // Find targets (other knights, powerups)
+                const livingKnights = knights.filter(k => k.isAlive && k !== aiKnight);
+                const closestKnight = findClosest(aiKnight, livingKnights);
+                const closestPowerup = findClosest(aiKnight, powerups);
+
+                // AI State Machine
+                if (closestPowerup && aiKnight.weapon.type === 'sword') {
+                    aiKnight.ai.state = 'seeking_weapon';
+                    aiKnight.ai.target = closestPowerup;
+                } else if (closestKnight) {
+                    aiKnight.ai.state = 'attacking';
+                    aiKnight.ai.target = closestKnight;
+                } else {
+                    aiKnight.ai.state = 'wandering';
+                    aiKnight.ai.target = null;
+                }
+                aiKnight.ai.changeTargetTimer = settings.reaction + Math.random() * 100;
+            }
+           
+            // Execute state
+            if (aiKnight.ai.target && Math.random() > settings.wanderChance) {
+                const target = aiKnight.ai.target;
+                
+                aiKnight.angle = Math.atan2(target.y - aiKnight.y, target.x - aiKnight.x) + (Math.random() - 0.5) * settings.accuracy;
+
+                const distanceToTarget = getDistance(aiKnight, target);
+                if (aiKnight.ai.state === 'seeking_weapon' || (aiKnight.ai.state === 'attacking' && distanceToTarget > aiKnight.weapon.range)) {
+                    aiKnight.vx = Math.cos(aiKnight.angle) * KNIGHT_SPEED;
+                    aiKnight.vy = Math.sin(aiKnight.angle) * KNIGHT_SPEED;
+                } else {
+                    aiKnight.vx = 0;
+                    aiKnight.vy = 0;
+                }
+                
+                if (aiKnight.ai.state === 'attacking' && now > aiKnight.lastAttackTime + aiKnight.weapon.cooldown) {
+                    if (Math.random() > settings.hesitationChance) {
+                       attack(aiKnight);
+                    }
+                    aiKnight.lastAttackTime = now;
+                }
+
+            } else { // Wandering
+                if (Math.random() < 0.05) { // Change direction occasionally
+                    aiKnight.ai.moveAngle = Math.random() * Math.PI * 2;
+                }
+                aiKnight.vx = Math.cos(aiKnight.ai.moveAngle) * KNIGHT_SPEED * 0.5;
+                aiKnight.vy = Math.sin(aiKnight.ai.moveAngle) * KNIGHT_SPEED * 0.5;
+            }
+        }
+
+        function updateKnights() {
+            knights.forEach((k) => {
+                if (!k.isAlive) return;
+
+                if (k.isPlayer) {
+                    updatePlayer(k);
+                } else {
+                    updateAI(k);
+                }
+
+                // Wall collision
+                let nextX = k.x + k.vx;
+                let nextY = k.y + k.vy;
+                
+                let collidedX = false;
+                let collidedY = false;
+
+                for (const wall of walls) {
+                    // Check X collision
+                    if (nextX + k.radius > wall.x && nextX - k.radius < wall.x + wall.width &&
+                        k.y + k.radius > wall.y && k.y - k.radius < wall.y + wall.height) {
+                        collidedX = true;
+                    }
+                     // Check Y collision
+                    if (k.x + k.radius > wall.x && k.x - k.radius < wall.x + wall.width &&
+                        nextY + k.radius > wall.y && nextY - k.radius < wall.y + wall.height) {
+                        collidedY = true;
+                    }
+                }
+                
+                if (!collidedX) k.x = nextX;
+                if (!collidedY) k.y = nextY;
+
+
+                // Boundary collision
+                if (k.x - k.radius < 0) k.x = k.radius;
+                if (k.x + k.radius > canvas.width) k.x = canvas.width - k.radius;
+                if (k.y - k.radius < 0) k.y = k.radius;
+                if (k.y + k.radius > canvas.height) k.y = canvas.height - k.radius;
+                
+                // Powerup collision
+                powerups.forEach((p, index) => {
+                    if (getDistance(k, p) < k.radius + p.radius) {
+                        k.weapon = { ...WEAPONS[p.type] };
+                        powerups.splice(index, 1);
+                    }
+                });
+            });
+        }
+        
+        function updateProjectiles() {
+            projectiles.forEach((p, pIndex) => {
+                p.x += p.vx;
+                p.y += p.vy;
+
+                // Boundary collision
+                if (p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+                    projectiles.splice(pIndex, 1);
+                    return;
+                }
+
+                // Wall collision
+                for (let wIndex = walls.length - 1; wIndex >= 0; wIndex--) {
+                    const wall = walls[wIndex];
+                    if (p.x > wall.x && p.x < wall.x + wall.width && p.y > wall.y && p.y < wall.y + wall.height) {
+                        wall.hp--;
+                        if (wall.hp <= 0) {
+                            walls.splice(wIndex, 1);
+                        }
+                        projectiles.splice(pIndex, 1);
+                        return; 
+                    }
+                }
+                
+                // Knight collision
+                knights.forEach(k => {
+                    if (k.isAlive && k !== p.owner && getDistance(p, k) < k.radius) {
+                        k.isAlive = false;
+                        projectiles.splice(pIndex, 1);
+                    }
+                });
+            });
+        }
+        
+        function updateSwordSlashes() {
+            const now = Date.now();
+            swordSlashes.forEach((slash, index) => {
+                if (now > slash.startTime + slash.weapon.duration) {
+                    swordSlashes.splice(index, 1);
+                    return;
+                }
+                
+                // Knight collision
+                knights.forEach(k => {
+                    if (k.isAlive && k !== slash.owner) {
+                        const dist = getDistance(slash.owner, k);
+                        if (dist < k.radius + slash.weapon.range) {
+                            let angleToKnight = Math.atan2(k.y - slash.owner.y, k.x - slash.owner.x);
+                            
+                            let diff = angleToKnight - slash.startAngle;
+                            while (diff < -Math.PI) diff += 2 * Math.PI;
+                            while (diff > Math.PI) diff -= 2 * Math.PI;
+
+                            if (Math.abs(diff) < slash.weapon.arc / 2) {
+                                k.isAlive = false;
+                            }
+                        }
+                    }
+                });
+
+                // Wall collision
+                 for (let wIndex = walls.length - 1; wIndex >= 0; wIndex--) {
+                    const wall = walls[wIndex];
+                    if (slash.hitWalls.includes(wall.id)) continue;
+                    
+                    const wallCenterX = wall.x + wall.width / 2;
+                    const wallCenterY = wall.y + wall.height / 2;
+                    
+                    const dist = getDistance(slash.owner, {x: wallCenterX, y: wallCenterY});
+                    if (dist < slash.weapon.range + WALL_SIZE/2) {
+                        let angleToWall = Math.atan2(wallCenterY - slash.owner.y, wallCenterX - slash.owner.x);
+                        let diff = angleToWall - slash.startAngle;
+                        while (diff < -Math.PI) diff += 2 * Math.PI;
+                        while (diff > Math.PI) diff -= 2 * Math.PI;
+
+                        if (Math.abs(diff) < slash.weapon.arc) { // Wider arc for walls
+                            wall.hp--;
+                            if (wall.hp <= 0) {
+                                walls.splice(wIndex, 1);
+                            }
+                            slash.hitWalls.push(wall.id);
+                        }
+                    }
+                }
+
+            });
+        }
+
+        function updatePowerups() {
+            if (Date.now() > lastPowerupTime + POWERUP_SPAWN_DELAY && powerups.length < powerupLocations.length) {
+                const occupiedLocations = powerups.map(p => ({ x: p.x, y: p.y }));
+                const availableLocations = powerupLocations.filter(loc => 
+                    !occupiedLocations.some(occ => occ.x === loc.x && occ.y === loc.y)
+                );
+
+                if (availableLocations.length > 0) {
+                    const spawnLoc = availableLocations[Math.floor(Math.random() * availableLocations.length)];
+                    powerups.push({
+                        x: spawnLoc.x,
+                        y: spawnLoc.y,
+                        radius: POWERUP_RADIUS,
+                        type: POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)]
+                    });
+                    lastPowerupTime = Date.now();
+                }
+            }
+        }
+
+        function checkRoundOver() {
+            const livingKnights = knights.filter(k => k.isAlive);
+            if (livingKnights.length <= 1) {
+                if (livingKnights.length === 1) {
+                    const winner = livingKnights[0];
+                    winner.score++;
+                    updateScoreboard();
+
+                    if (winner.score >= SCORE_TO_WIN) {
+                        showMessage(winner.isPlayer ? 'YOU WIN THE MATCH!' : 'YOU LOSE!', 3000);
+                        gameState = 'MATCH_OVER';
+                        setTimeout(() => {
+                           messageOverlay.classList.add('hidden');
+                           gameState = 'MENU';
+                           startMenu.classList.remove('hidden');
+                           scoreboardDiv.classList.add('hidden');
+                        }, 3000);
+                    } else {
+                        showMessage(winner.isPlayer ? 'ROUND WON!' : `P${knights.indexOf(winner) + 1} WINS!`, 2000);
+                        gameState = 'ROUND_OVER';
+                        setTimeout(() => {
+                            resetRound();
+                            gameState = 'COUNTDOWN';
+                        }, 2000);
+                    }
+                } else { // Draw
+                    showMessage('DRAW!', 2000);
+                    gameState = 'ROUND_OVER';
+                    setTimeout(() => {
+                        resetRound();
+                        gameState = 'COUNTDOWN';
+                    }, 2000);
+                }
+                return true;
+            }
+            return false;
+        }
+
+        // --- Attack & Helper Functions ---
+        function attack(knight) {
+            const weapon = knight.weapon;
+
+            switch (weapon.type) {
+                case 'sword':
+                    swordSlashes.push({
+                        owner: knight,
+                        startAngle: knight.angle,
+                        startTime: Date.now(),
+                        weapon: weapon,
+                        hitWalls: [],
+                    });
+                    break;
+                case 'bow':
+                    createProjectile(knight, knight.angle, 10, 'arrow');
+                    break;
+                case 'laser':
+                    createProjectile(knight, knight.angle, 15, 'laser_beam');
+                    break;
+                case 'shotgun':
+                    for (let i = 0; i < weapon.count; i++) {
+                        const angle = knight.angle + (Math.random() - 0.5) * weapon.spread;
+                        createProjectile(knight, angle, 8 + Math.random() * 2, 'pellet');
+                    }
+                    break;
+                case 'minigun':
+                    const angle = knight.angle + (Math.random() - 0.5) * 0.2;
+                     createProjectile(knight, angle, 12, 'bullet');
+                    break;
+            }
+        }
+
+        function createProjectile(owner, angle, speed, type) {
+            projectiles.push({
+                x: owner.x + Math.cos(angle) * (owner.radius + 5),
+                y: owner.y + Math.sin(angle) * (owner.radius + 5),
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                owner: owner,
+                type: type
+            });
+        }
+
+        function getDistance(obj1, obj2) {
+            const dx = obj1.x - obj2.x;
+            const dy = obj1.y - obj2.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+        
+        function findClosest(source, targets) {
+             if (targets.length === 0) return null;
+             return targets.reduce((closest, current) => {
+                const distToCurrent = getDistance(source, current);
+                const distToClosest = getDistance(source, closest);
+                return distToCurrent < distToClosest ? current : closest;
+            });
+        }
+        
+        // --- Draw Functions ---
+        function drawWalls() {
+            const wallColors = ['#9ca3af', '#6b7280', '#4b5563'];
+            walls.forEach(wall => {
+                ctx.fillStyle = wallColors[wall.hp - 1] || '#374151';
+                ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+                ctx.strokeStyle = '#1f2937';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(wall.x, wall.y, wall.width, wall.height);
+            });
+        }
+
+        function drawKnights() {
+            knights.forEach(k => {
+                if (!k.isAlive) return;
+                
+                ctx.save();
+                ctx.translate(k.x, k.y);
+
+                // Body
+                ctx.fillStyle = k.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, k.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = "rgba(0,0,0,0.3)";
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                // Weapon/Indicator
+                ctx.rotate(k.angle);
+                ctx.fillStyle = k.weapon.color;
+                ctx.fillRect(k.radius - 5, -5, 20, 10);
+                
+                ctx.restore();
+            });
+        }
+        
+        function drawProjectiles() {
+            projectiles.forEach(p => {
+                ctx.fillStyle = p.owner.weapon.color;
+                if(p.type === 'arrow') {
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(Math.atan2(p.vy, p.vx) + Math.PI / 2);
+                    ctx.fillRect(-2, -10, 4, 20);
+                    ctx.restore();
+                } else if (p.type === 'laser_beam') {
+                     ctx.beginPath();
+                     ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+                     ctx.fill();
+                }
+                else {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+        
+        function drawSwordSlashes() {
+            const now = Date.now();
+            swordSlashes.forEach(slash => {
+                const progress = (now - slash.startTime) / slash.weapon.duration;
+                if (progress > 1) return;
+                
+                ctx.save();
+                ctx.translate(slash.owner.x, slash.owner.y);
+                ctx.strokeStyle = `rgba(255, 255, 255, ${1 - progress})`;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(0, 0, slash.weapon.range, 
+                        slash.startAngle - slash.weapon.arc / 2,
+                        slash.startAngle + slash.weapon.arc / 2);
+                ctx.stroke();
+                ctx.restore();
+            });
+        }
+
+        function drawPowerups() {
+            powerups.forEach(p => {
+                ctx.fillStyle = WEAPONS[p.type].color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                // Draw Letter
+                ctx.fillStyle = 'black';
+                ctx.font = 'bold 16px "Press Start 2P"';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(p.type.charAt(0).toUpperCase(), p.x, p.y);
+            });
+        }
+        
+        // --- Main Game Loop ---
+        let lastTime = 0;
+        let countdown = 3;
+        
+        function gameLoop(timestamp) {
+            if (gameState === 'MENU' || gameState === 'MATCH_OVER') return;
+            requestAnimationFrame(gameLoop);
+            
+            const deltaTime = (timestamp - lastTime) || 0;
+            lastTime = timestamp;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (messageTimer > 0) {
+                messageTimer -= deltaTime;
+                if(messageTimer <= 0) {
+                    messageOverlay.classList.add('hidden');
+                }
+            }
+
+            if (gameState === 'COUNTDOWN') {
+                if (countdown > 0) {
+                    showMessage(Math.ceil(countdown), 1000);
+                    countdown -= deltaTime / 1000;
+                } else {
+                    gameState = 'PLAYING';
+                    countdown = 3;
+                }
+            } else if (gameState === 'PLAYING') {
+                updatePowerups();
+                updateKnights();
+                updateProjectiles();
+                updateSwordSlashes();
+                if (checkRoundOver()) return;
+            }
+            
+            drawWalls();
+            drawPowerups();
+            drawKnights();
+            drawProjectiles();
+            drawSwordSlashes();
+        }
+
+        resizeCanvas();
+    }
+    </script>
+</body>
+</html>
+
