@@ -300,8 +300,8 @@
             'splash': { name: 'Splash', cost: 150, color: '#f97316', health: 120, range: 90, damage: 15, fireRate: 60, projectileSpeed: 4, splashRadius: 40, projectileColor: '#fb923c', description: 'Deals area damage.' },
             'sniper': { name: 'Sniper', cost: 250, color: '#8b5cf6', health: 80, range: 300, damage: 50, fireRate: 120, projectileSpeed: 15, projectileColor: '#a78bfa', description: 'Long range, high damage.' },
             'slow': { name: 'Slow', cost: 120, color: '#14b8a6', health: 100, range: 100, damage: 1, fireRate: 40, projectileSpeed: 5, slow: { amount: 0.5, duration: 120 }, projectileColor: '#2dd4bf', description: 'Slows enemies.'},
-            'multi': { name: 'Multi-Shot', cost: 200, color: '#ec4899', health: 100, range: 110, damage: 7, fireRate: 45, projectileSpeed: 6, projectiles: 3, projectileColor: '#f472b6', description: 'Shoots 3 projectiles.'},
-            'fire': { name: 'Fire', cost: 180, color: '#f59e0b', health: 150, range: 80, damage: 5, fireRate: 50, projectileSpeed: 5, dot: { damage: 2, duration: 180 }, projectileColor: '#facc15', description: 'Applies damage over time.'},
+            'multi': { name: 'Multi-Shot', cost: 200, color: '#ec4899', health: 100, range: 110, damage: 7, fireRate: 45, projectileSpeed: 6, projectiles: 3, projectileColor: '#f472b6', description: 'Shoots 3 projectiles in a cone.'},
+            'fire': { name: 'Fire', cost: 180, color: '#f59e0b', health: 150, range: 80, damage: 8, fireRate: 50, projectileSpeed: 5, dot: { damage: 8, duration: 240 }, projectileColor: '#facc15', description: 'Applies heavy damage over time.'},
             'missile': { name: 'Missile', cost: 350, color: '#6366f1', health: 200, range: 180, damage: 80, fireRate: 150, projectileSpeed: 3, splashRadius: 50, projectileColor: '#818cf8', description: 'High damage, splash.'},
             'healer': { name: 'Healer', cost: 175, color: '#22c55e', health: 120, range: 100, healAmount: 5, fireRate: 50, description: 'Heals nearby towers and player.'},
         };
@@ -369,7 +369,7 @@
                 this.weapon = JSON.parse(JSON.stringify(PLAYER_WEAPONS[weaponType]));
                 this.target = null;
                 this.fireCooldown = 0;
-                this.pickupRange = 50 + getPerkEffect('pickupRange');
+                this.pickupRange = 80 + getPerkEffect('pickupRange');
             }
 
             draw() {
@@ -595,6 +595,14 @@
                         this.target.health = Math.min(this.target.maxHealth, this.target.health + this.config.healAmount);
                         gameState.effects.push(new HealEffect(this.target.x, this.target.y));
                     }
+                } else if (this.type === 'multi') {
+                    const baseAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                    const spread = 0.4; // Radians for the cone
+                    for (let i = 0; i < this.config.projectiles; i++) {
+                        const angle = baseAngle + (i - Math.floor(this.config.projectiles / 2)) * spread;
+                        const p = new Projectile(this.x, this.y, this.target, this.type, this.level, angle);
+                        gameState.projectiles.push(p);
+                    }
                 } else {
                     const fireCount = this.config.projectiles || 1;
                     for (let i = 0; i < fireCount; i++) {
@@ -643,16 +651,20 @@
         }
         
         class Enemy {
-             constructor(type, isBoss = false) {
+             constructor(type, isBoss = false, isMiniBoss = false) {
                 this.type = type;
                 this.config = ENEMY_TYPES[type];
                 this.pathIndex = 0;
                 this.x = gameState.path[0].x;
                 this.y = gameState.path[0].y;
                 this.isBoss = isBoss;
+                this.isMiniBoss = isMiniBoss;
                 this.health = this.config.health * Math.pow(1.15, gameState.currentLevel - 1);
                 if(this.isBoss) {
                     this.health *= 5;
+                }
+                if(this.isMiniBoss) {
+                    this.health *= 2.5;
                 }
                 this.maxHealth = this.health;
                 this.speed = this.config.speed;
@@ -665,13 +677,18 @@
                 ctx.save();
                 ctx.fillStyle = this.slowTimer > 0 ? this.config.color + '80' : this.config.color;
 
-                const radius = this.isBoss ? (TILE_SIZE / 2 - 4) : (TILE_SIZE / 2 - 8);
+                const radius = this.isBoss ? (TILE_SIZE / 2 - 4) : this.isMiniBoss ? (TILE_SIZE / 2 - 6) : (TILE_SIZE / 2 - 8);
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
                 ctx.fill();
 
                 if(this.isBoss) {
                     ctx.strokeStyle = 'yellow';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+                 if(this.isMiniBoss) {
+                    ctx.strokeStyle = '#f97316';
                     ctx.lineWidth = 2;
                     ctx.stroke();
                 }
@@ -685,7 +702,7 @@
                     ctx.fill();
                 }
 
-                const healthBarWidth = TILE_SIZE * (this.isBoss ? 1.2 : 0.8);
+                const healthBarWidth = TILE_SIZE * (this.isBoss ? 1.2 : this.isMiniBoss ? 1 : 0.8);
                 const healthBarHeight = 5;
                 ctx.fillStyle = '#1f2937';
                 ctx.fillRect(this.x - healthBarWidth / 2, this.y - TILE_SIZE / 2, healthBarWidth, healthBarHeight);
@@ -712,7 +729,7 @@
                         this.pathIndex++;
                     }
                 } else {
-                    gameState.fortressHealth -= this.isBoss ? 25 : 10;
+                    gameState.fortressHealth -= this.isBoss ? 25 : this.isMiniBoss ? 15 : 10;
                     this.health = 0; 
                     if (gameState.fortressHealth <= 0) {
                         gameState.fortressHealth = 0;
@@ -819,7 +836,7 @@
             draw() {
                 ctx.fillStyle = '#facc15';
                 ctx.beginPath();
-                ctx.arc(this.x, this.y, 6, 0, Math.PI * 2);
+                ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.strokeStyle = '#f59e0b';
                 ctx.stroke();
@@ -901,13 +918,27 @@
 
         function spawnWave() {
             gameState.currentWave++;
+            // Final Boss Wave
             if (gameState.currentWave === gameState.totalWaves) {
                 let bossType = 'basic';
                 if(gameState.currentLevel >= 5) bossType = 'tank';
                 else if (gameState.currentLevel >= 3) bossType = 'fast';
-                gameState.enemies.push(new Enemy(bossType, true));
+                gameState.enemies.push(new Enemy(bossType, true, false));
                 return;
             }
+            // Mini-Boss Wave
+            if (gameState.currentWave > 0 && gameState.currentWave < gameState.totalWaves && gameState.currentWave % 3 === 0) {
+                let miniBossType = 'tank';
+                if (gameState.currentLevel < 5) miniBossType = 'fast';
+                gameState.enemies.push(new Enemy(miniBossType, false, true));
+                const enemyCount = gameState.currentLevel; // spawn some minions
+                for (let i = 0; i < enemyCount; i++) {
+                     setTimeout(() => { if(gameState.gameRunning) gameState.enemies.push(new Enemy(gameState.levelEnemyType)); }, i * 500);
+                }
+                return;
+            }
+
+            // Normal Wave
             const enemyCount = gameState.currentWave * 3 + gameState.currentLevel;
             for (let i = 0; i < enemyCount; i++) {
                 setTimeout(() => { if(gameState.gameRunning) gameState.enemies.push(new Enemy(gameState.levelEnemyType)); }, i * 400);
@@ -928,6 +959,7 @@
                 if (e.health <= 0) {
                     let coinValue = ENEMY_TYPES[e.type].coins * (1 + gameState.currentLevel * 0.1);
                     if (e.isBoss) coinValue *= 3;
+                    if (e.isMiniBoss) coinValue *= 1.5;
                     gameState.coinsOnGround.push(new Coin(e.x, e.y, Math.floor(coinValue)));
                     return false;
                 }
@@ -1089,7 +1121,7 @@
             const startingCoinsPerk = getPerkEffect('startingCoins');
             gameState.coins = (350 + (gameState.currentLevel * 10)) + startingCoinsPerk;
             gameState.currentWave = 0;
-            gameState.totalWaves = Math.min(5, 2 + Math.floor(gameState.currentLevel / 3));
+            gameState.totalWaves = Math.min(10, 5 + Math.floor(gameState.currentLevel / 2));
             gameState.levelEnemyType = 'basic';
             gameState.towers = [];
             gameState.enemies = [];
@@ -1207,7 +1239,7 @@
                         gameState.player.health += gameState.player.maxHealth - oldMax;
                     }
                     if (perkId === 'pickupRange') {
-                        gameState.player.pickupRange = 50 + getPerkEffect('pickupRange');
+                        gameState.player.pickupRange = 80 + getPerkEffect('pickupRange');
                     }
                 }
                 
@@ -1400,4 +1432,3 @@
     </script>
 </body>
 </html>
-
