@@ -91,11 +91,11 @@
         <canvas id="game-canvas"></canvas>
 
         <!-- TOP UI -->
-        <div id="top-ui" class="absolute top-0 left-0 right-0 p-4 flex justify-between pointer-events-none text-shadow">
+        <div id="top-ui" class="absolute top-0 left-0 right-0 p-4 flex justify-between text-shadow">
             <!-- Top Left - Level Stats -->
-            <div class="bg-gray-900/70 p-3 rounded-lg border border-gray-700 space-y-2">
+            <div class="bg-gray-900/70 p-3 rounded-lg border border-gray-700 space-y-2 pointer-events-auto">
                  <div class="flex items-center space-x-3">
-                    <button id="pause-button" class="bg-yellow-600 hover:bg-yellow-700 rounded-full h-8 w-8 flex items-center justify-center pointer-events-auto text-gray-900">
+                    <button id="pause-button" class="bg-yellow-600 hover:bg-yellow-700 rounded-full h-8 w-8 flex items-center justify-center text-gray-900">
                         <svg id="pause-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6" />
                         </svg>
@@ -103,14 +103,14 @@
                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
                         </svg>
                     </button>
-                    <div id="tower-count" class="font-orbitron text-lg">Towers: 0/6</div>
+                    <div id="tower-count" class="font-orbitron text-lg pointer-events-none">Towers: 0/6</div>
                 </div>
-                <div class="flex items-center space-x-2">
+                <div class="flex items-center space-x-2 pointer-events-none">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>
                     <span id="fortress-health" class="font-orbitron text-lg">100/100</span>
                 </div>
-                <div id="wave-info" class="font-orbitron text-lg">Wave: 0/2</div>
-                <div class="flex items-center space-x-2">
+                <div id="wave-info" class="font-orbitron text-lg pointer-events-none">Wave: 0/2</div>
+                <div class="flex items-center space-x-2 pointer-events-none">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>
                     <span id="coins" class="font-orbitron text-lg">350</span>
                 </div>
@@ -118,8 +118,8 @@
 
             <!-- Top Right - Persistent Stats -->
             <div class="bg-gray-900/70 p-3 rounded-lg border border-gray-700 space-y-2 text-right pointer-events-auto">
-                <div class="font-orbitron text-lg">Player Level: <span id="player-level">1</span></div>
-                <div class="w-48">
+                <div class="font-orbitron text-lg pointer-events-none">Player Level: <span id="player-level">1</span></div>
+                <div class="w-48 pointer-events-none">
                     <div class="progress-bar-container h-4">
                         <div id="xp-bar" class="progress-bar" style="width: 0%;"></div>
                     </div>
@@ -992,7 +992,7 @@
                  if (gameState.currentWave >= gameState.totalWaves) {
                     levelComplete();
                  } else {
-                    gameState.waveCountdown = 180; // 3 seconds at 60fps
+                    gameState.waveCountdown = 300; // 5 seconds at 60fps
                  }
             }
 
@@ -1183,8 +1183,8 @@
             gameState.projectiles = [];
             gameState.effects = [];
             gameState.coinsOnGround = [];
-            gameState.selectedTower = null;
             gameState.selectedTowerType = null;
+            gameState.selectedTower = null;
             gameState.player = new Player(TILE_SIZE * 2, canvas.height / 2, weaponType);
             showTowerBuildUI();
             
@@ -1402,11 +1402,11 @@
                             gameState.coins -= cost;
                             gameState.towers.push(new Tower(gridX * TILE_SIZE + TILE_SIZE / 2, gridY * TILE_SIZE + TILE_SIZE / 2, gameState.selectedTowerType));
                             gameState.grid[gridY][gridX] = 2;
+                            gameState.selectedTowerType = null; // Deselect after successful placement
                             updateUI();
                          }
                      }
                 }
-                gameState.selectedTowerType = null;
             } else {
                 gameState.selectedTower = null;
                  for(const tower of gameState.towers) {
@@ -1453,6 +1453,14 @@
             gameState.isPaused = !gameState.isPaused;
             ui.pauseIcon.classList.toggle('hidden');
             ui.playIcon.classList.toggle('hidden');
+            
+            const readyButtonShouldBeVisible = gameState.enemies.length === 0 && gameState.currentWave < gameState.totalWaves && gameState.waveCountdown < 0 && ui.startWaveButton.textContent === 'READY';
+            
+            if (gameState.isPaused) {
+                ui.startWaveButton.style.display = 'none';
+            } else if (readyButtonShouldBeVisible) {
+                 ui.startWaveButton.style.display = 'block';
+            }
         });
         
         document.getElementById('perks-button').addEventListener('click', () => {
@@ -1497,4 +1505,3 @@
     </script>
 </body>
 </html>
-
